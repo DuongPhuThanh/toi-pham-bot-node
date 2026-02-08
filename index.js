@@ -45,7 +45,7 @@ function diceEmoji(n) {
 /* ================= TÀI XỈU ROOM ================= */
 let room = {
   open: false,
-  bets: {}, // userId: { choice, amount }
+  bets: {},
   message: null,
   time: 0
 };
@@ -57,6 +57,16 @@ client.once("ready", async () => {
   const commands = [
     new SlashCommandBuilder().setName("taixiu").setDescription("🎲 Mở ván Tài Xỉu"),
     new SlashCommandBuilder().setName("nhantien").setDescription("💰 Nhận 100 coin mỗi ngày"),
+    new SlashCommandBuilder().setName("sodu").setDescription("💳 Xem số dư hiện tại"),
+    new SlashCommandBuilder()
+      .setName("chuyencoin")
+      .setDescription("💸 Chuyển coin cho người khác")
+      .addUserOption(o =>
+        o.setName("user").setDescription("Người nhận").setRequired(true)
+      )
+      .addIntegerOption(o =>
+        o.setName("amount").setDescription("Số coin").setRequired(true)
+      ),
     new SlashCommandBuilder()
       .setName("addcoin")
       .setDescription("🛠 Admin cộng tiền")
@@ -66,6 +76,8 @@ client.once("ready", async () => {
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+
+  console.log("✅ Slash commands registered");
 });
 
 /* ================= INTERACTION ================= */
@@ -74,7 +86,34 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== SLASH ===== */
     if (interaction.isChatInputCommand()) {
-      await interaction.deferReply();
+      await interaction.deferReply({ ephemeral: false });
+
+      /* /sodu */
+      if (interaction.commandName === "sodu") {
+        const user = getUser(interaction.user.id);
+        return interaction.editReply(`💳 **Số dư của bạn:** ${user.coin} coin`);
+      }
+
+      /* /chuyencoin */
+      if (interaction.commandName === "chuyencoin") {
+        const to = interaction.options.getUser("user");
+        const amount = interaction.options.getInteger("amount");
+        const fromUser = getUser(interaction.user.id);
+
+        if (amount <= 0)
+          return interaction.editReply("❌ Số coin không hợp lệ");
+
+        if (fromUser.coin < amount)
+          return interaction.editReply("❌ Không đủ coin");
+
+        fromUser.coin -= amount;
+        getUser(to.id).coin += amount;
+        save();
+
+        return interaction.editReply(
+          `💸 Đã chuyển **${amount} coin** cho <@${to.id}>\n💳 Số dư còn lại: ${fromUser.coin}`
+        );
+      }
 
       /* DAILY */
       if (interaction.commandName === "nhantien") {
@@ -119,7 +158,6 @@ client.on("interactionCreate", async (interaction) => {
           components: [row]
         });
 
-        /* COUNTDOWN */
         const timer = setInterval(async () => {
           room.time--;
 
@@ -186,12 +224,17 @@ async function rollDice() {
   const total = d1 + d2 + d3;
   const isTai = total >= 11;
 
-  let resultText = `🎲 **KẾT QUẢ**\n${diceEmoji(d1)} ${diceEmoji(d2)} ${diceEmoji(d3)} = **${total}**\n👉 ${isTai ? "TÀI" : "XỈU"}\n\n`;
+  let resultText =
+    `🎲 **KẾT QUẢ**\n` +
+    `${diceEmoji(d1)} ${diceEmoji(d2)} ${diceEmoji(d3)} = **${total}**\n` +
+    `👉 ${isTai ? "TÀI" : "XỈU"}\n\n`;
 
   for (const uid in room.bets) {
     const bet = room.bets[uid];
     const user = getUser(uid);
-    const win = (bet.choice === "tai" && isTai) || (bet.choice === "xiu" && !isTai);
+    const win =
+      (bet.choice === "tai" && isTai) ||
+      (bet.choice === "xiu" && !isTai);
 
     if (win) {
       user.coin += bet.amount * 2;
@@ -203,7 +246,6 @@ async function rollDice() {
 
   save();
   room.open = false;
-
   await room.message.edit(resultText);
 }
 
