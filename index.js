@@ -32,7 +32,11 @@ function save() {
 
 function getUser(id) {
   if (!data.users[id]) {
-    data.users[id] = { coin: 0, lastDaily: 0 };
+    data.users[id] = {
+      coin: 0,
+      lastDaily: 0,
+      playing: false
+    };
   }
   return data.users[id];
 }
@@ -94,8 +98,8 @@ client.on("interactionCreate", async (interaction) => {
 
       if (interaction.commandName === "taixiu") {
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId("tai").setLabel("Tài (11–18)").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId("xiu").setLabel("Xỉu (3–10)").setStyle(ButtonStyle.Danger)
+          new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài (11–18)").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu (3–10)").setStyle(ButtonStyle.Danger)
         );
 
         return interaction.editReply({
@@ -107,6 +111,15 @@ client.on("interactionCreate", async (interaction) => {
 
     /* ===== BUTTON → MODAL ===== */
     if (interaction.isButton()) {
+      const user = getUser(interaction.user.id);
+
+      if (user.playing) {
+        return interaction.reply({
+          content: "⏳ Bạn đang có 1 ván chưa kết thúc",
+          ephemeral: true
+        });
+      }
+
       const modal = new ModalBuilder()
         .setCustomId(`bet_${interaction.customId}`)
         .setTitle("Nhập số tiền cược");
@@ -135,16 +148,16 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
       }
 
-      user.coin -= bet;
+      user.playing = true;
       save();
 
       await interaction.reply(`⏳ **Đang lắc xúc xắc... (45s)**`);
-
-      let time = 45;
       const msg = await interaction.fetchReply();
 
+      let time = 45;
       const interval = setInterval(async () => {
         time--;
+
         if (time <= 0) {
           clearInterval(interval);
 
@@ -158,7 +171,13 @@ client.on("interactionCreate", async (interaction) => {
             (choice === "tai" && isTai) ||
             (choice === "xiu" && !isTai);
 
-          if (win) user.coin += bet * 2;
+          if (win) {
+            user.coin += bet;
+          } else {
+            user.coin -= bet;
+          }
+
+          user.playing = false;
           save();
 
           return msg.edit(
