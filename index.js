@@ -6,17 +6,15 @@ const {
   ButtonStyle,
   SlashCommandBuilder,
   REST,
-  Routes
+  Routes,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle
 } = require("discord.js");
 const fs = require("fs");
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const ADMIN_ID = process.env.ADMIN_ID;
-
-if (!TOKEN) {
-  console.error("❌ Thiếu DISCORD_TOKEN");
-  process.exit(1);
-}
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
@@ -39,7 +37,7 @@ function getUser(id) {
   return data.users[id];
 }
 
-/* ================= REGISTER COMMAND ================= */
+/* ================= COMMAND ================= */
 client.once("ready", async () => {
   console.log(`✅ Bot online: ${client.user.tag}`);
 
@@ -55,18 +53,14 @@ client.once("ready", async () => {
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-
-  console.log("✅ Slash command đã đăng ký");
 });
 
 /* ================= INTERACTION ================= */
 client.on("interactionCreate", async (interaction) => {
   try {
 
-    /* ===== SLASH COMMAND ===== */
+    /* ===== SLASH ===== */
     if (interaction.isChatInputCommand()) {
-
-      // 🔥 QUAN TRỌNG
       await interaction.deferReply();
 
       if (interaction.commandName === "nhantien") {
@@ -92,8 +86,7 @@ client.on("interactionCreate", async (interaction) => {
         const target = interaction.options.getUser("user");
         const amount = interaction.options.getInteger("amount");
 
-        const user = getUser(target.id);
-        user.coin += amount;
+        getUser(target.id).coin += amount;
         save();
 
         return interaction.editReply(`✅ Đã cộng **${amount} coin** cho ${target}`);
@@ -101,53 +94,89 @@ client.on("interactionCreate", async (interaction) => {
 
       if (interaction.commandName === "taixiu") {
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder()
-            .setCustomId("tai")
-            .setLabel("🎲 Tài (11–18)")
-            .setStyle(ButtonStyle.Success),
-          new ButtonBuilder()
-            .setCustomId("xiu")
-            .setLabel("🎲 Xỉu (3–10)")
-            .setStyle(ButtonStyle.Danger)
+          new ButtonBuilder().setCustomId("tai").setLabel("Tài (11–18)").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId("xiu").setLabel("Xỉu (3–10)").setStyle(ButtonStyle.Danger)
         );
 
         return interaction.editReply({
-          content: "🎰 **TÀI XỈU**\nChọn cửa:",
+          content: "🎰 **TÀI XỈU**\nChọn cửa để đặt cược:",
           components: [row]
         });
       }
     }
 
-    /* ===== BUTTON ===== */
+    /* ===== BUTTON → MODAL ===== */
     if (interaction.isButton()) {
+      const modal = new ModalBuilder()
+        .setCustomId(`bet_${interaction.customId}`)
+        .setTitle("Nhập số tiền cược");
 
-      // 🔥 CỨU MẠNG
-      await interaction.deferUpdate();
+      const input = new TextInputBuilder()
+        .setCustomId("amount")
+        .setLabel("Số coin muốn cược")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
 
-      const dice = Math.floor(Math.random() * 16) + 3;
-      const choice = interaction.customId;
-      const win =
-        (choice === "tai" && dice >= 11) ||
-        (choice === "xiu" && dice <= 10);
+      modal.addComponents(new ActionRowBuilder().addComponents(input));
+      return interaction.showModal(modal);
+    }
 
+    /* ===== MODAL SUBMIT ===== */
+    if (interaction.isModalSubmit()) {
+      const choice = interaction.customId.split("_")[1];
+      const bet = parseInt(interaction.fields.getTextInputValue("amount"));
       const user = getUser(interaction.user.id);
-      const result = win ? 50 : -50;
-      user.coin += result;
+
+      if (isNaN(bet) || bet <= 0) {
+        return interaction.reply({ content: "❌ Số tiền không hợp lệ", ephemeral: true });
+      }
+
+      if (user.coin < bet) {
+        return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
+      }
+
+      user.coin -= bet;
       save();
 
-      await interaction.followUp({
-        content:
-          `🎲 Kết quả: **${dice}**\n` +
-          `${win ? "🎉 THẮNG" : "💀 THUA"} (${result} coin)\n` +
-          `💳 Số dư: **${user.coin}**`
-      });
+      await interaction.reply(`⏳ **Đang lắc xúc xắc... (45s)**`);
+
+      let time = 45;
+      const msg = await interaction.fetchReply();
+
+      const interval = setInterval(async () => {
+        time--;
+        if (time <= 0) {
+          clearInterval(interval);
+
+          const d1 = Math.floor(Math.random() * 6) + 1;
+          const d2 = Math.floor(Math.random() * 6) + 1;
+          const d3 = Math.floor(Math.random() * 6) + 1;
+          const total = d1 + d2 + d3;
+
+          const isTai = total >= 11;
+          const win =
+            (choice === "tai" && isTai) ||
+            (choice === "xiu" && !isTai);
+
+          if (win) user.coin += bet * 2;
+          save();
+
+          return msg.edit(
+            `🎲 **KẾT QUẢ**\n` +
+            `🎲🎲🎲 = **${total}**\n` +
+            `👉 ${isTai ? "TÀI" : "XỈU"}\n\n` +
+            `${win ? "🎉 THẮNG" : "💀 THUA"}\n` +
+            `👤 <@${interaction.user.id}>\n` +
+            `💳 Số dư: **${user.coin}**`
+          );
+        }
+
+        msg.edit(`⏳ **Đang lắc xúc xắc... ${time}s**`);
+      }, 1000);
     }
 
-  } catch (err) {
-    console.error(err);
-    if (!interaction.replied) {
-      await interaction.reply({ content: "❌ Lỗi bot", ephemeral: true });
-    }
+  } catch (e) {
+    console.error(e);
   }
 });
 
