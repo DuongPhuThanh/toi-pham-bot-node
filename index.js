@@ -37,7 +37,7 @@ function getUser(id) {
   return data.users[id];
 }
 
-/* ================= DICE EMOJI (SERVER EMOJI) ================= */
+/* ================= DICE EMOJI ================= */
 const DICE = {
   1: "<:dice1:1470461068836077740>",
   2: "<:dice2:1470461090197410095>",
@@ -46,12 +46,9 @@ const DICE = {
   5: "<:dice5:1470461150578610339>",
   6: "<:dice6:1470461041145151582>"
 };
+const diceEmoji = n => DICE[n];
 
-function diceEmoji(n) {
-  return DICE[n];
-}
-
-/* ================= TÀI XỈU ROOM ================= */
+/* ================= ROOM ================= */
 let room = {
   open: false,
   bets: {},
@@ -82,19 +79,45 @@ client.once("ready", async () => {
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-
-  console.log("✅ Slash commands registered");
 });
 
 /* ================= INTERACTION ================= */
 client.on("interactionCreate", async (interaction) => {
   try {
+
+    /* ===== SLASH ===== */
     if (interaction.isChatInputCommand()) {
+
+      /* 🔥 FIX CHUYỂN COIN – KHÔNG deferReply */
+      if (interaction.commandName === "chuyencoin") {
+        const to = interaction.options.getUser("user");
+        const amount = interaction.options.getInteger("amount");
+        const from = getUser(interaction.user.id);
+
+        if (amount <= 0)
+          return interaction.reply({ content: "❌ Số coin không hợp lệ", ephemeral: true });
+
+        if (from.coin < amount)
+          return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
+
+        from.coin -= amount;
+        getUser(to.id).coin += amount;
+        save();
+
+        return interaction.reply(
+          `💸 **CHUYỂN COIN THÀNH CÔNG**\n` +
+          `👤 Người nhận: <@${to.id}>\n` +
+          `💰 Số coin: **${amount}**\n` +
+          `💳 Số dư còn lại: **${from.coin}**`
+        );
+      }
+
+      /* ===== CÁC LỆNH KHÁC → CẦN defer ===== */
       await interaction.deferReply();
 
       if (interaction.commandName === "sodu") {
-        const user = getUser(interaction.user.id);
-        return interaction.editReply(`💳 **Số dư:** ${user.coin} coin`);
+        const u = getUser(interaction.user.id);
+        return interaction.editReply(`💳 **Số dư:** ${u.coin} coin`);
       }
 
       if (interaction.commandName === "nhantien") {
@@ -143,13 +166,11 @@ client.on("interactionCreate", async (interaction) => {
 
         const timer = setInterval(async () => {
           room.time--;
-
           if (room.time <= 0) {
             clearInterval(timer);
             await rollDice();
             return;
           }
-
           room.message.edit({
             content:
               `🎰 **TÀI XỈU**\n` +
@@ -161,6 +182,7 @@ client.on("interactionCreate", async (interaction) => {
       }
     }
 
+    /* ===== BUTTON ===== */
     if (interaction.isButton()) {
       if (!room.open)
         return interaction.reply({ content: "❌ Không có ván", ephemeral: true });
@@ -181,6 +203,7 @@ client.on("interactionCreate", async (interaction) => {
       return interaction.showModal(modal);
     }
 
+    /* ===== MODAL ===== */
     if (interaction.isModalSubmit()) {
       const choice = interaction.customId.split("_")[1];
       const amount = parseInt(interaction.fields.getTextInputValue("amount"));
@@ -204,7 +227,7 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-/* ================= ROLL DICE ================= */
+/* ================= ROLL ================= */
 async function rollDice() {
   const d1 = rand(), d2 = rand(), d3 = rand();
   const total = d1 + d2 + d3;
@@ -218,11 +241,10 @@ async function rollDice() {
   for (const uid in room.bets) {
     const bet = room.bets[uid];
     const user = getUser(uid);
-    const win =
+    if (
       (bet.choice === "tai" && isTai) ||
-      (bet.choice === "xiu" && !isTai);
-
-    if (win) {
+      (bet.choice === "xiu" && !isTai)
+    ) {
       user.coin += bet.amount * 2;
       text += `🎉 <@${uid}> thắng +${bet.amount}\n`;
     } else {
@@ -232,8 +254,6 @@ async function rollDice() {
 
   save();
   room.open = false;
-
-  // GỬI MESSAGE MỚI → EMOJI HIỆN 100%
   await room.channel.send(text);
 }
 
@@ -241,5 +261,4 @@ function rand() {
   return Math.floor(Math.random() * 6) + 1;
 }
 
-/* ================= LOGIN ================= */
 client.login(TOKEN);
