@@ -109,7 +109,7 @@ client.on("interactionCreate", async interaction => {
       );
     }
 
-    /* ===== TÀI XỈU (KHÔNG defer) ===== */
+    /* ===== TÀI XỈU ===== */
     if (interaction.isChatInputCommand() && interaction.commandName === "taixiu") {
       if (room.open)
         return interaction.reply({ content: "⏳ Đang có ván khác", ephemeral: true });
@@ -144,7 +144,7 @@ client.on("interactionCreate", async interaction => {
       return;
     }
 
-    /* ===== BẦU CUA (KHÔNG defer) ===== */
+    /* ===== BẦU CUA ===== */
     if (interaction.isChatInputCommand() && interaction.commandName === "baucua") {
       if (baucua.open)
         return interaction.reply({ content: "⏳ Đang có ván khác", ephemeral: true });
@@ -185,24 +185,65 @@ client.on("interactionCreate", async interaction => {
       return;
     }
 
-    /* ===== CÁC LỆNH NHẸ ===== */
-    if (interaction.isChatInputCommand()) {
-      await interaction.deferReply();
-      if (interaction.commandName === "sodu")
-        return interaction.editReply(`💳 ${getUser(interaction.user.id).coin} coin`);
+    /* ===== SỐ DƯ ===== */
+    if (interaction.isChatInputCommand() && interaction.commandName === "sodu") {
+      return interaction.reply(`💳 ${getUser(interaction.user.id).coin} coin`);
     }
 
-    /* ===== BUTTON BẦU CUA ===== */
-    if (interaction.isButton() && baucua.open && BAUCUA_KEYS.includes(interaction.customId)) {
-      const modal = new ModalBuilder()
-        .setCustomId(`baucua_${interaction.customId}`)
-        .setTitle("Nhập coin")
-        .addComponents(
-          new ActionRowBuilder().addComponents(
-            new TextInputBuilder().setCustomId("amount").setLabel("Coin").setStyle(TextInputStyle.Short)
-          )
-        );
-      return interaction.showModal(modal);
+    /* ===== BUTTON (FIX TRIỆT ĐỂ) ===== */
+    if (interaction.isButton()) {
+
+      // TÀI / XỈU
+      if (room.open && (interaction.customId === "tai" || interaction.customId === "xiu")) {
+        const modal = new ModalBuilder()
+          .setCustomId(`bet_${interaction.customId}`)
+          .setTitle("Nhập số coin cược")
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("amount")
+                .setLabel("Coin")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            )
+          );
+        return interaction.showModal(modal);
+      }
+
+      // BẦU CUA
+      if (baucua.open && BAUCUA_KEYS.includes(interaction.customId)) {
+        const modal = new ModalBuilder()
+          .setCustomId(`baucua_${interaction.customId}`)
+          .setTitle("Nhập coin")
+          .addComponents(
+            new ActionRowBuilder().addComponents(
+              new TextInputBuilder()
+                .setCustomId("amount")
+                .setLabel("Coin")
+                .setStyle(TextInputStyle.Short)
+                .setRequired(true)
+            )
+          );
+        return interaction.showModal(modal);
+      }
+
+      return interaction.reply({ content: "❌ Nút không hợp lệ", ephemeral: true });
+    }
+
+    /* ===== MODAL TÀI XỈU ===== */
+    if (interaction.isModalSubmit() && interaction.customId.startsWith("bet_")) {
+      const choice = interaction.customId.split("_")[1];
+      const amount = parseInt(interaction.fields.getTextInputValue("amount"));
+      const user = getUser(interaction.user.id);
+
+      if (amount <= 0 || user.coin < amount)
+        return interaction.reply({ content: "❌ Không hợp lệ", ephemeral: true });
+
+      user.coin -= amount;
+      room.bets[interaction.user.id] = { choice, amount };
+      save();
+
+      return interaction.reply({ content: "✅ Đã đặt cược", ephemeral: true });
     }
 
     /* ===== MODAL BẦU CUA ===== */
