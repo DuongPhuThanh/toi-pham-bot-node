@@ -37,7 +37,7 @@ function getUser(id) {
   return data.users[id];
 }
 
-/* ================= DICE ================= */
+/* ================= DICE EMOJI ================= */
 const DICE = {
   1: "<:dice1:1470461068836077740>",
   2: "<:dice2:1470461090197410095>",
@@ -60,11 +60,26 @@ const BAUCUA = {
 const BAUCUA_KEYS = Object.keys(BAUCUA);
 
 /* ================= ROOMS ================= */
-let room = { open: false, bets: {}, message: null, time: 0, channel: null };
-let baucua = { open: false, bets: {}, message: null, time: 0, channel: null };
+let room = {
+  open: false,
+  bets: {},
+  message: null,
+  time: 0,
+  channel: null
+};
+
+let baucua = {
+  open: false,
+  bets: {},
+  message: null,
+  time: 45,
+  channel: null
+};
 
 /* ================= COMMAND REGISTER ================= */
 client.once("ready", async () => {
+  console.log(`✅ Bot online: ${client.user.tag}`);
+
   const commands = [
     new SlashCommandBuilder().setName("taixiu").setDescription("🎲 Mở ván Tài Xỉu"),
     new SlashCommandBuilder().setName("baucua").setDescription("🎲 Mở ván Bầu Cua"),
@@ -84,7 +99,6 @@ client.once("ready", async () => {
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-  console.log("✅ Bot online");
 });
 
 /* ================= INTERACTION ================= */
@@ -109,10 +123,12 @@ client.on("interactionCreate", async interaction => {
       );
     }
 
-    /* ===== TÀI XỈU ===== */
+    /* ===== TÀI XỈU (FIX TRIỆT ĐỂ) ===== */
     if (interaction.isChatInputCommand() && interaction.commandName === "taixiu") {
       if (room.open)
         return interaction.reply({ content: "⏳ Đang có ván khác", ephemeral: true });
+
+      await interaction.deferReply(); // 🔥 FIX CHÍNH
 
       room.open = true;
       room.bets = {};
@@ -124,8 +140,8 @@ client.on("interactionCreate", async interaction => {
         new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu").setStyle(ButtonStyle.Danger)
       );
 
-      room.message = await interaction.reply({
-        content: `🎰 **TÀI XỈU**\n${diceEmoji(1)} ${diceEmoji(2)} ${diceEmoji(3)}\n⏳ 45s`,
+      room.message = await interaction.editReply({
+        content: `🎰 **TÀI XỈU**\n🎲 🎲 🎲\n⏳ 45s`,
         components: [row]
       });
 
@@ -137,116 +153,96 @@ client.on("interactionCreate", async interaction => {
           return;
         }
         await room.message.edit({
-          content: `🎰 **TÀI XỈU**\n${diceEmoji(1)} ${diceEmoji(2)} ${diceEmoji(3)}\n⏳ ${room.time}s`,
+          content: `🎰 **TÀI XỈU**\n🎲 🎲 🎲\n⏳ ${room.time}s`,
           components: [row]
         });
       }, 1000);
       return;
     }
 
-    /* ===== BẦU CUA ===== */
-    if (interaction.isChatInputCommand() && interaction.commandName === "baucua") {
-      if (baucua.open)
-        return interaction.reply({ content: "⏳ Đang có ván khác", ephemeral: true });
+    /* ===== LỆNH NHẸ ===== */
+    if (interaction.isChatInputCommand()) {
+      await interaction.deferReply();
 
-      baucua.open = true;
-      baucua.bets = {};
-      baucua.time = 45;
-      baucua.channel = interaction.channel;
+      if (interaction.commandName === "sodu")
+        return interaction.editReply(`💳 ${getUser(interaction.user.id).coin} coin`);
 
-      const row1 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("bau").setLabel("🍐").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("cua").setLabel("🦀").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("tom").setLabel("🦐").setStyle(ButtonStyle.Primary)
-      );
-      const row2 = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("ca").setLabel("🐟").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("ga").setLabel("🐓").setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId("nai").setLabel("🦌").setStyle(ButtonStyle.Primary)
-      );
+      if (interaction.commandName === "nhantien") {
+        const u = getUser(interaction.user.id);
+        if (Date.now() - u.lastDaily < 86400000)
+          return interaction.editReply("⏳ Hôm nay nhận rồi");
 
-      baucua.message = await interaction.reply({
-        content: `🎰 **BẦU CUA**\n🍐 🦀 🦐 🐟 🐓 🦌\n⏳ 45s`,
-        components: [row1, row2]
-      });
+        u.coin += 100;
+        u.lastDaily = Date.now();
+        save();
+        return interaction.editReply(`💰 +100 | Tổng: ${u.coin}`);
+      }
 
-      const timer = setInterval(async () => {
-        baucua.time--;
-        if (baucua.time <= 0) {
-          clearInterval(timer);
-          await rollBauCua();
-          return;
-        }
-        await baucua.message.edit({
-          content: `🎰 **BẦU CUA**\n🍐 🦀 🦐 🐟 🐓 🦌\n⏳ ${baucua.time}s`,
+      if (interaction.commandName === "addcoin") {
+        if (interaction.user.id !== ADMIN_ID)
+          return interaction.editReply("❌ Không có quyền");
+
+        const t = interaction.options.getUser("user");
+        const a = interaction.options.getInteger("amount");
+        getUser(t.id).coin += a;
+        save();
+        return interaction.editReply(`✅ Đã cộng ${a} coin cho ${t}`);
+      }
+
+      /* ===== BẦU CUA ===== */
+      if (interaction.commandName === "baucua") {
+        if (baucua.open)
+          return interaction.editReply("⏳ Đang có ván khác");
+
+        baucua.open = true;
+        baucua.bets = {};
+        baucua.time = 45;
+        baucua.channel = interaction.channel;
+
+        const row1 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("bau").setLabel("🍐").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("cua").setLabel("🦀").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("tom").setLabel("🦐").setStyle(ButtonStyle.Primary)
+        );
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("ca").setLabel("🐟").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("ga").setLabel("🐓").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("nai").setLabel("🦌").setStyle(ButtonStyle.Primary)
+        );
+
+        baucua.message = await interaction.editReply({
+          content: `🎰 **BẦU CUA**\n🍐 🦀 🦐 🐟 🐓 🦌\n⏳ 45s`,
           components: [row1, row2]
         });
-      }, 1000);
-      return;
-    }
 
-    /* ===== SỐ DƯ ===== */
-    if (interaction.isChatInputCommand() && interaction.commandName === "sodu") {
-      return interaction.reply(`💳 ${getUser(interaction.user.id).coin} coin`);
-    }
-
-    /* ===== BUTTON (FIX TRIỆT ĐỂ) ===== */
-    if (interaction.isButton()) {
-
-      // TÀI / XỈU
-      if (room.open && (interaction.customId === "tai" || interaction.customId === "xiu")) {
-        const modal = new ModalBuilder()
-          .setCustomId(`bet_${interaction.customId}`)
-          .setTitle("Nhập số coin cược")
-          .addComponents(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId("amount")
-                .setLabel("Coin")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-            )
-          );
-        return interaction.showModal(modal);
+        const timer = setInterval(async () => {
+          baucua.time--;
+          if (baucua.time <= 0) {
+            clearInterval(timer);
+            await rollBauCua();
+            return;
+          }
+          await baucua.message.edit({
+            content: `🎰 **BẦU CUA**\n🍐 🦀 🦐 🐟 🐓 🦌\n⏳ ${baucua.time}s`,
+            components: [row1, row2]
+          });
+        }, 1000);
       }
-
-      // BẦU CUA
-      if (baucua.open && BAUCUA_KEYS.includes(interaction.customId)) {
-        const modal = new ModalBuilder()
-          .setCustomId(`baucua_${interaction.customId}`)
-          .setTitle("Nhập coin")
-          .addComponents(
-            new ActionRowBuilder().addComponents(
-              new TextInputBuilder()
-                .setCustomId("amount")
-                .setLabel("Coin")
-                .setStyle(TextInputStyle.Short)
-                .setRequired(true)
-            )
-          );
-        return interaction.showModal(modal);
-      }
-
-      return interaction.reply({ content: "❌ Nút không hợp lệ", ephemeral: true });
     }
 
-    /* ===== MODAL TÀI XỈU ===== */
-    if (interaction.isModalSubmit() && interaction.customId.startsWith("bet_")) {
-      const choice = interaction.customId.split("_")[1];
-      const amount = parseInt(interaction.fields.getTextInputValue("amount"));
-      const user = getUser(interaction.user.id);
-
-      if (amount <= 0 || user.coin < amount)
-        return interaction.reply({ content: "❌ Không hợp lệ", ephemeral: true });
-
-      user.coin -= amount;
-      room.bets[interaction.user.id] = { choice, amount };
-      save();
-
-      return interaction.reply({ content: "✅ Đã đặt cược", ephemeral: true });
+    /* ===== BUTTON + MODAL BẦU CUA ===== */
+    if (interaction.isButton() && baucua.open && BAUCUA_KEYS.includes(interaction.customId)) {
+      const modal = new ModalBuilder()
+        .setCustomId(`baucua_${interaction.customId}`)
+        .setTitle("Nhập coin")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId("amount").setLabel("Coin").setStyle(TextInputStyle.Short)
+          )
+        );
+      return interaction.showModal(modal);
     }
 
-    /* ===== MODAL BẦU CUA ===== */
     if (interaction.isModalSubmit() && interaction.customId.startsWith("baucua_")) {
       const choice = interaction.customId.split("_")[1];
       const amount = parseInt(interaction.fields.getTextInputValue("amount"));
@@ -258,7 +254,6 @@ client.on("interactionCreate", async interaction => {
       user.coin -= amount;
       baucua.bets[interaction.user.id] = { choice, amount };
       save();
-
       return interaction.reply({ content: "✅ Đã cược", ephemeral: true });
     }
 
