@@ -37,7 +37,7 @@ function getUser(id) {
   return data.users[id];
 }
 
-/* ================= CUSTOM DICE EMOJI ================= */
+/* ================= DICE EMOJI (SERVER EMOJI) ================= */
 const DICE = {
   1: "<:dice1:1470461068836077740>",
   2: "<:dice2:1470461090197410095>",
@@ -56,7 +56,8 @@ let room = {
   open: false,
   bets: {},
   message: null,
-  time: 0
+  time: 0,
+  channel: null
 };
 
 /* ================= COMMAND REGISTER ================= */
@@ -88,14 +89,12 @@ client.once("ready", async () => {
 /* ================= INTERACTION ================= */
 client.on("interactionCreate", async (interaction) => {
   try {
-
-    /* ===== SLASH ===== */
     if (interaction.isChatInputCommand()) {
       await interaction.deferReply();
 
       if (interaction.commandName === "sodu") {
-        const u = getUser(interaction.user.id);
-        return interaction.editReply(`💳 **Số dư:** ${u.coin} coin`);
+        const user = getUser(interaction.user.id);
+        return interaction.editReply(`💳 **Số dư:** ${user.coin} coin`);
       }
 
       if (interaction.commandName === "nhantien") {
@@ -106,7 +105,7 @@ client.on("interactionCreate", async (interaction) => {
         u.coin += 100;
         u.lastDaily = Date.now();
         save();
-        return interaction.editReply(`💰 +100 coin | Số dư: ${u.coin}`);
+        return interaction.editReply(`💰 +100 coin | Tổng: ${u.coin}`);
       }
 
       if (interaction.commandName === "addcoin") {
@@ -127,6 +126,7 @@ client.on("interactionCreate", async (interaction) => {
         room.open = true;
         room.bets = {};
         room.time = 45;
+        room.channel = interaction.channel;
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài (11–18)").setStyle(ButtonStyle.Success),
@@ -136,8 +136,8 @@ client.on("interactionCreate", async (interaction) => {
         room.message = await interaction.editReply({
           content:
             `🎰 **TÀI XỈU**\n` +
-            `⏳ Còn **45s** để đặt cược\n\n` +
-            `${diceEmoji(1)} ${diceEmoji(2)} ${diceEmoji(3)}`,
+            `${diceEmoji(1)} ${diceEmoji(2)} ${diceEmoji(3)}\n` +
+            `⏳ Còn **45s** để đặt cược`,
           components: [row]
         });
 
@@ -146,51 +146,48 @@ client.on("interactionCreate", async (interaction) => {
 
           if (room.time <= 0) {
             clearInterval(timer);
-            await room.message.edit({ content: "⛔ Đã khoá cược", components: [] });
-            await rollDice(room.message.channel);
+            await rollDice();
             return;
           }
 
           room.message.edit({
             content:
               `🎰 **TÀI XỈU**\n` +
-              `⏳ Còn **${room.time}s** để đặt cược\n\n` +
-              `${diceEmoji(1)} ${diceEmoji(2)} ${diceEmoji(3)}`
+              `${diceEmoji(1)} ${diceEmoji(2)} ${diceEmoji(3)}\n` +
+              `⏳ Còn **${room.time}s** để đặt cược`,
+            components: [row]
           });
         }, 1000);
       }
     }
 
-    /* ===== BUTTON ===== */
     if (interaction.isButton()) {
       if (!room.open)
         return interaction.reply({ content: "❌ Không có ván", ephemeral: true });
 
       const modal = new ModalBuilder()
         .setCustomId(`bet_${interaction.customId}`)
-        .setTitle("Nhập số coin");
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder()
-            .setCustomId("amount")
-            .setLabel("Số coin cược")
-            .setStyle(TextInputStyle.Short)
-            .setRequired(true)
-        )
-      );
+        .setTitle("Nhập số coin cược")
+        .addComponents(
+          new ActionRowBuilder().addComponents(
+            new TextInputBuilder()
+              .setCustomId("amount")
+              .setLabel("Số coin")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(true)
+          )
+        );
 
       return interaction.showModal(modal);
     }
 
-    /* ===== MODAL ===== */
     if (interaction.isModalSubmit()) {
       const choice = interaction.customId.split("_")[1];
       const amount = parseInt(interaction.fields.getTextInputValue("amount"));
       const user = getUser(interaction.user.id);
 
       if (isNaN(amount) || amount <= 0)
-        return interaction.reply({ content: "❌ Số coin sai", ephemeral: true });
+        return interaction.reply({ content: "❌ Số coin không hợp lệ", ephemeral: true });
 
       if (user.coin < amount)
         return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
@@ -207,14 +204,14 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-/* ================= ROLL ================= */
-async function rollDice(channel) {
+/* ================= ROLL DICE ================= */
+async function rollDice() {
   const d1 = rand(), d2 = rand(), d3 = rand();
   const total = d1 + d2 + d3;
   const isTai = total >= 11;
 
   let text =
-    `🎲 **KẾT QUẢ**\n\n` +
+    `🎲 **KẾT QUẢ**\n` +
     `${diceEmoji(d1)} ${diceEmoji(d2)} ${diceEmoji(d3)} = **${total}**\n` +
     `👉 **${isTai ? "TÀI" : "XỈU"}**\n\n`;
 
@@ -227,16 +224,17 @@ async function rollDice(channel) {
 
     if (win) {
       user.coin += bet.amount * 2;
-      text += `🎉 <@${uid}> thắng **+${bet.amount}**\n`;
+      text += `🎉 <@${uid}> thắng +${bet.amount}\n`;
     } else {
-      text += `💀 <@${uid}> thua **-${bet.amount}**\n`;
+      text += `💀 <@${uid}> thua -${bet.amount}\n`;
     }
   }
 
   save();
   room.open = false;
 
-  await channel.send(text);
+  // GỬI MESSAGE MỚI → EMOJI HIỆN 100%
+  await room.channel.send(text);
 }
 
 function rand() {
