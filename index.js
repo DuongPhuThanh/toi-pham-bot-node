@@ -37,8 +37,18 @@ function getUser(id) {
   return data.users[id];
 }
 
-/* ================= FAKE DICE ANIMATION ================= */
-const SPIN_FRAMES = ["🎲", "🔄🎲", "🎲🔄", "✨🎲", "🎲✨"];
+/* ================= DICE EMOJI (SERVER EMOJI) ================= */
+function diceEmoji(n) {
+  const dice = [
+    ":dice1:",
+    ":dice2:",
+    ":dice3:",
+    ":dice4:",
+    ":dice5:",
+    ":dice6:"
+  ];
+  return dice[n - 1];
+}
 
 /* ================= TÀI XỈU ROOM ================= */
 let room = {
@@ -81,16 +91,17 @@ client.on("interactionCreate", async (interaction) => {
     if (interaction.isChatInputCommand()) {
       await interaction.deferReply();
 
-      if (interaction.commandName === "sodu")
+      if (interaction.commandName === "sodu") {
         return interaction.editReply(`💳 **Số dư:** ${getUser(interaction.user.id).coin} coin`);
+      }
 
       if (interaction.commandName === "chuyencoin") {
         const to = interaction.options.getUser("user");
         const amount = interaction.options.getInteger("amount");
         const from = getUser(interaction.user.id);
 
-        if (amount <= 0 || from.coin < amount)
-          return interaction.editReply("❌ Không đủ coin");
+        if (amount <= 0) return interaction.editReply("❌ Số coin không hợp lệ");
+        if (from.coin < amount) return interaction.editReply("❌ Không đủ coin");
 
         from.coin -= amount;
         getUser(to.id).coin += amount;
@@ -107,7 +118,7 @@ client.on("interactionCreate", async (interaction) => {
         u.coin += 100;
         u.lastDaily = Date.now();
         save();
-        return interaction.editReply(`💰 +100 coin | Tổng: ${u.coin}`);
+        return interaction.editReply(`💰 +100 coin | Còn ${u.coin}`);
       }
 
       if (interaction.commandName === "addcoin") {
@@ -121,33 +132,35 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.editReply(`✅ Đã cộng ${a} coin cho ${t}`);
       }
 
-      /* ===== OPEN TÀI XỈU (CÓ ANIMATION) ===== */
+      /* ===== OPEN TÀI XỈU ===== */
       if (interaction.commandName === "taixiu") {
-        if (room.open)
-          return interaction.editReply("⏳ Đang có ván rồi");
+        if (room.open) return interaction.editReply("⏳ Đang có ván");
 
         room.open = true;
         room.bets = {};
         room.time = 45;
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài (11–18)").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu (3–10)").setStyle(ButtonStyle.Danger)
+          new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu").setStyle(ButtonStyle.Danger)
         );
 
-        let frame = 0;
-
         room.message = await interaction.editReply({
-          content: `🎰 **TÀI XỈU**\n🎲 🎲 🎲\n⏳ 45s`,
+          content: "🎰 **TÀI XỈU**\n⏳ Còn 45s để đặt cược",
           components: [row]
         });
 
-        room.anim = setInterval(() => {
-          frame = (frame + 1) % SPIN_FRAMES.length;
-          room.message.edit(
-            `🎰 **TÀI XỈU**\n${SPIN_FRAMES[frame]} ${SPIN_FRAMES[(frame+1)%5]} ${SPIN_FRAMES[(frame+2)%5]}\n⏳ ${room.time}s`
-          );
-        }, 500);
+        /* === ANIMATION QUAY LIÊN TỤC TRONG 45s === */
+        room.anim = setInterval(async () => {
+          if (!room.open) return;
+          const a = rand(), b = rand(), c = rand();
+          try {
+            await room.message.edit(
+              `🎰 **TÀI XỈU**\n⏳ Còn ${room.time}s để đặt cược\n\n🎲 ${diceEmoji(a)} ${diceEmoji(b)} ${diceEmoji(c)}`,
+              { components: [row] }
+            );
+          } catch {}
+        }, 700);
 
         const timer = setInterval(async () => {
           room.time--;
@@ -166,7 +179,7 @@ client.on("interactionCreate", async (interaction) => {
 
       const modal = new ModalBuilder()
         .setCustomId(`bet_${interaction.customId}`)
-        .setTitle("Nhập số coin");
+        .setTitle("Nhập số coin cược");
 
       modal.addComponents(
         new ActionRowBuilder().addComponents(
@@ -186,30 +199,32 @@ client.on("interactionCreate", async (interaction) => {
       const amount = parseInt(interaction.fields.getTextInputValue("amount"));
       const user = getUser(interaction.user.id);
 
-      if (isNaN(amount) || user.coin < amount)
+      if (amount <= 0 || isNaN(amount))
+        return interaction.reply({ content: "❌ Coin không hợp lệ", ephemeral: true });
+      if (user.coin < amount)
         return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
 
       user.coin -= amount;
       room.bets[interaction.user.id] = { choice, amount };
       save();
+
       return interaction.reply({ content: "✅ Đã đặt cược", ephemeral: true });
     }
-
   } catch (e) {
     console.error(e);
   }
 });
 
-/* ================= ROLL ================= */
+/* ================= FINAL ROLL ================= */
 async function rollDice() {
   const d1 = rand(), d2 = rand(), d3 = rand();
   const total = d1 + d2 + d3;
   const isTai = total >= 11;
 
   let text =
-    `🎲 **KẾT QUẢ** 🎲\n` +
-    `🎲 🎲 🎲 → **${total}**\n` +
-    `👉 **${isTai ? "TÀI" : "XỈU"}**\n\n`;
+    `🎉 **KẾT QUẢ TÀI XỈU** 🎉\n\n` +
+    `🎲 ${diceEmoji(d1)}  ${diceEmoji(d2)}  ${diceEmoji(d3)}\n` +
+    `🔢 Tổng: **${total}** → **${isTai ? "TÀI" : "XỈU"}**\n\n`;
 
   for (const uid in room.bets) {
     const bet = room.bets[uid];
@@ -220,19 +235,20 @@ async function rollDice() {
 
     if (win) {
       user.coin += bet.amount * 2;
-      text += `🎉 <@${uid}> thắng +${bet.amount}\n`;
+      text += `✅ <@${uid}> thắng +${bet.amount}\n`;
     } else {
-      text += `💀 <@${uid}> thua -${bet.amount}\n`;
+      text += `❌ <@${uid}> thua -${bet.amount}\n`;
     }
   }
 
   save();
   room.open = false;
-  await room.message.edit({ content: text, components: [] });
+  await room.message.edit(text);
 }
 
 function rand() {
   return Math.floor(Math.random() * 6) + 1;
 }
 
+/* ================= LOGIN ================= */
 client.login(TOKEN);
