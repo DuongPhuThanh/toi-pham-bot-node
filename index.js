@@ -37,17 +37,18 @@ function getUser(id) {
   return data.users[id];
 }
 
-/* ================= DICE EMOJI (SERVER EMOJI) ================= */
+/* ================= CUSTOM DICE EMOJI (PNG) ================= */
+const DICE = [
+  "<:dice1:1470461068836077740>",
+  "<:dice2:1470461090197410095>",
+  "<:dice3:1470461110040662217>",
+  "<:dice4:1470461130064400495>",
+  "<:dice5:1470461150578610339>",
+  "<:dice6:1470461041145151582>"
+];
+
 function diceEmoji(n) {
-  const dice = [
-    ":dice1:",
-    ":dice2:",
-    ":dice3:",
-    ":dice4:",
-    ":dice5:",
-    ":dice6:"
-  ];
-  return dice[n - 1];
+  return DICE[n - 1];
 }
 
 /* ================= TÀI XỈU ROOM ================= */
@@ -88,6 +89,7 @@ client.once("ready", async () => {
 /* ================= INTERACTION ================= */
 client.on("interactionCreate", async (interaction) => {
   try {
+
     if (interaction.isChatInputCommand()) {
       await interaction.deferReply();
 
@@ -132,7 +134,6 @@ client.on("interactionCreate", async (interaction) => {
         return interaction.editReply(`✅ Đã cộng ${a} coin cho ${t}`);
       }
 
-      /* ===== OPEN TÀI XỈU ===== */
       if (interaction.commandName === "taixiu") {
         if (room.open) return interaction.editReply("⏳ Đang có ván");
 
@@ -141,8 +142,8 @@ client.on("interactionCreate", async (interaction) => {
         room.time = 45;
 
         const row = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài").setStyle(ButtonStyle.Success),
-          new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu").setStyle(ButtonStyle.Danger)
+          new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài (11–18)").setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu (3–10)").setStyle(ButtonStyle.Danger)
         );
 
         room.message = await interaction.editReply({
@@ -150,17 +151,15 @@ client.on("interactionCreate", async (interaction) => {
           components: [row]
         });
 
-        /* === ANIMATION QUAY LIÊN TỤC TRONG 45s === */
+        /* ===== ANIMATION QUAY TRONG 45s ===== */
         room.anim = setInterval(async () => {
-          if (!room.open) return;
           const a = rand(), b = rand(), c = rand();
           try {
             await room.message.edit(
-              `🎰 **TÀI XỈU**\n⏳ Còn ${room.time}s để đặt cược\n\n🎲 ${diceEmoji(a)} ${diceEmoji(b)} ${diceEmoji(c)}`,
-              { components: [row] }
+              `🎰 **ĐANG LẮC XÚC XẮC**\n🎲 ${diceEmoji(a)} ${diceEmoji(b)} ${diceEmoji(c)}\n⏳ Còn ${room.time}s`
             );
           } catch {}
-        }, 700);
+        }, 400);
 
         const timer = setInterval(async () => {
           room.time--;
@@ -199,8 +198,9 @@ client.on("interactionCreate", async (interaction) => {
       const amount = parseInt(interaction.fields.getTextInputValue("amount"));
       const user = getUser(interaction.user.id);
 
-      if (amount <= 0 || isNaN(amount))
-        return interaction.reply({ content: "❌ Coin không hợp lệ", ephemeral: true });
+      if (isNaN(amount) || amount <= 0)
+        return interaction.reply({ content: "❌ Số coin không hợp lệ", ephemeral: true });
+
       if (user.coin < amount)
         return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
 
@@ -210,19 +210,20 @@ client.on("interactionCreate", async (interaction) => {
 
       return interaction.reply({ content: "✅ Đã đặt cược", ephemeral: true });
     }
+
   } catch (e) {
     console.error(e);
   }
 });
 
-/* ================= FINAL ROLL ================= */
+/* ================= FINAL RESULT (NET & ĐẸP) ================= */
 async function rollDice() {
   const d1 = rand(), d2 = rand(), d3 = rand();
   const total = d1 + d2 + d3;
   const isTai = total >= 11;
 
-  let text =
-    `🎉 **KẾT QUẢ TÀI XỈU** 🎉\n\n` +
+  let resultText =
+    `🎉 **KẾT QUẢ CUỐI** 🎉\n\n` +
     `🎲 ${diceEmoji(d1)}  ${diceEmoji(d2)}  ${diceEmoji(d3)}\n` +
     `🔢 Tổng: **${total}** → **${isTai ? "TÀI" : "XỈU"}**\n\n`;
 
@@ -235,15 +236,15 @@ async function rollDice() {
 
     if (win) {
       user.coin += bet.amount * 2;
-      text += `✅ <@${uid}> thắng +${bet.amount}\n`;
+      resultText += `🎉 <@${uid}> thắng +${bet.amount}\n`;
     } else {
-      text += `❌ <@${uid}> thua -${bet.amount}\n`;
+      resultText += `💀 <@${uid}> thua -${bet.amount}\n`;
     }
   }
 
   save();
   room.open = false;
-  await room.message.edit(text);
+  await room.message.edit(resultText);
 }
 
 function rand() {
