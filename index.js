@@ -200,20 +200,22 @@ client.on("interactionCreate", async (interaction) => {
           if (bucuRoom.time === 0) {
             bucuRoom.open = false;
 
-            const disabled = new ActionRowBuilder().addComponents(
-              ...BUCU_LIST.map(c =>
-                new ButtonBuilder()
-                  .setCustomId(`bucu_${c}`)
-                  .setLabel(`${BUCU[c]} ${c.toUpperCase()}`)
-                  .setStyle(ButtonStyle.Primary)
-                  .setDisabled(true)
-              )
-            );
+            const disabledRow1 = new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId("bucu_nai").setLabel("🦌 NAI").setStyle(ButtonStyle.Primary).setDisabled(true),
+  new ButtonBuilder().setCustomId("bucu_bau").setLabel("🍐 BẦU").setStyle(ButtonStyle.Primary).setDisabled(true),
+  new ButtonBuilder().setCustomId("bucu_ga").setLabel("🐓 GÀ").setStyle(ButtonStyle.Primary).setDisabled(true)
+);
 
-            await bucuRoom.message.edit({
-              content: `🎰 **BẦU CUA**\n🎲 ĐANG LẮC...\n⛔ HẾT THỜI GIAN`,
-              components: [disabled]
-            });
+const disabledRow2 = new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId("bucu_ca").setLabel("🐟 CÁ").setStyle(ButtonStyle.Primary).setDisabled(true),
+  new ButtonBuilder().setCustomId("bucu_cua").setLabel("🦀 CUA").setStyle(ButtonStyle.Primary).setDisabled(true),
+  new ButtonBuilder().setCustomId("bucu_tom").setLabel("🦐 TÔM").setStyle(ButtonStyle.Primary).setDisabled(true)
+);
+
+await bucuRoom.message.edit({
+  content: `🎰 **BẦU CUA**\n🎲 ĐANG LẮC...\n⛔ HẾT THỜI GIAN`,
+  components: [disabledRow1, disabledRow2]
+});
 
             clearInterval(timer);
             return rollBucu();
