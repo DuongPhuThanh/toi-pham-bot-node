@@ -46,12 +46,9 @@ const DICE = {
   5: "<:dice5:1470461150578610339>",
   6: "<:dice6:1470461041145151582>"
 };
+const diceEmoji = n => DICE[n];
 
-function diceEmoji(n) {
-  return DICE[n];
-}
-
-/* ================= BUCU (BAU CUA) EMOJI ================= */
+/* ================= BUCU (BAU CUA) ================= */
 const BUCU = {
   nai: "🦌",
   bau: "🍐",
@@ -62,8 +59,8 @@ const BUCU = {
 };
 const BUCU_LIST = Object.keys(BUCU);
 
-/* ================= TAI XIU ROOM ================= */
-let room = {
+/* ================= ROOMS ================= */
+let taiXiuRoom = {
   open: false,
   bets: {},
   message: null,
@@ -71,7 +68,6 @@ let room = {
   channel: null
 };
 
-/* ================= BUCU ROOM ================= */
 let bucuRoom = {
   open: false,
   bets: {},
@@ -87,13 +83,13 @@ client.once("ready", async () => {
   const commands = [
     new SlashCommandBuilder().setName("taixiu").setDescription("🎲 Mở ván Tài Xỉu"),
     new SlashCommandBuilder().setName("bucu").setDescription("🎲 Mở ván Bầu Cua"),
-    new SlashCommandBuilder().setName("nhantien").setDescription("💰 Nhận 100 coin mỗi ngày"),
     new SlashCommandBuilder().setName("sodu").setDescription("💳 Xem số dư"),
+    new SlashCommandBuilder().setName("nhantien").setDescription("💰 Nhận 100 coin mỗi ngày"),
     new SlashCommandBuilder()
       .setName("addcoin")
       .setDescription("🛠 Admin cộng coin")
-      .addUserOption(o => o.setName("user").setDescription("Người nhận").setRequired(true))
-      .addIntegerOption(o => o.setName("amount").setDescription("Số coin").setRequired(true))
+      .addUserOption(o => o.setName("user").setRequired(true))
+      .addIntegerOption(o => o.setName("amount").setRequired(true))
   ].map(c => c.toJSON());
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
@@ -103,14 +99,14 @@ client.once("ready", async () => {
 });
 
 /* ================= INTERACTION ================= */
-client.on("interactionCreate", async (interaction) => {
+client.on("interactionCreate", async interaction => {
   try {
-    /* ===== SLASH COMMAND ===== */
+    /* ===== SLASH ===== */
     if (interaction.isChatInputCommand()) {
       await interaction.deferReply();
 
       if (interaction.commandName === "sodu") {
-        return interaction.editReply(`💳 **Số dư:** ${getUser(interaction.user.id).coin} coin`);
+        return interaction.editReply(`💳 **${getUser(interaction.user.id).coin} coin**`);
       }
 
       if (interaction.commandName === "nhantien") {
@@ -120,51 +116,60 @@ client.on("interactionCreate", async (interaction) => {
         u.coin += 100;
         u.lastDaily = Date.now();
         save();
-        return interaction.editReply(`💰 +100 coin | Tổng: ${u.coin}`);
+        return interaction.editReply(`💰 +100 | Tổng: ${u.coin}`);
+      }
+
+      if (interaction.commandName === "addcoin") {
+        if (interaction.user.id !== ADMIN_ID)
+          return interaction.editReply("❌ Không có quyền");
+        const t = interaction.options.getUser("user");
+        const a = interaction.options.getInteger("amount");
+        getUser(t.id).coin += a;
+        save();
+        return interaction.editReply(`✅ Đã cộng ${a} coin cho ${t}`);
       }
 
       /* ===== TAI XIU ===== */
       if (interaction.commandName === "taixiu") {
-        if (room.open)
+        if (taiXiuRoom.open)
           return interaction.editReply("⏳ Đang có ván Tài Xỉu");
 
-        room.open = true;
-        room.bets = {};
-        room.time = 45;
-        room.channel = interaction.channel;
+        taiXiuRoom.open = true;
+        taiXiuRoom.bets = {};
+        taiXiuRoom.time = 45;
+        taiXiuRoom.channel = interaction.channel;
 
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài").setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu").setStyle(ButtonStyle.Danger)
         );
 
-        room.message = await interaction.editReply({
+        taiXiuRoom.message = await interaction.editReply({
           content: `🎰 **TÀI XỈU**\n🎲 ??? ??? ???\n⏳ **45s**`,
           components: [row]
         });
 
         const timer = setInterval(async () => {
-          room.time--;
-
-          if (room.time === 0) {
-            room.open = false;
+          taiXiuRoom.time--;
+          if (taiXiuRoom.time === 0) {
+            taiXiuRoom.open = false;
+            clearInterval(timer);
 
             const disabled = new ActionRowBuilder().addComponents(
               new ButtonBuilder().setCustomId("tai").setLabel("🎲 Tài").setStyle(ButtonStyle.Success).setDisabled(true),
               new ButtonBuilder().setCustomId("xiu").setLabel("🎲 Xỉu").setStyle(ButtonStyle.Danger).setDisabled(true)
             );
 
-            await room.message.edit({
-              content: `🎰 **TÀI XỈU**\n🎲 ĐANG LẮC...\n⛔ HẾT THỜI GIAN`,
+            await taiXiuRoom.message.edit({
+              content: `🎰 **TÀI XỈU**\n🎲 ĐANG LẮC...\n⛔ HẾT GIỜ`,
               components: [disabled]
             });
 
-            clearInterval(timer);
-            return rollDice();
+            return rollTaiXiu();
           }
 
-          room.message.edit({
-            content: `🎰 **TÀI XỈU**\n🎲 ??? ??? ???\n⏳ **${room.time}s**`,
+          taiXiuRoom.message.edit({
+            content: `🎰 **TÀI XỈU**\n🎲 ??? ??? ???\n⏳ **${taiXiuRoom.time}s**`,
             components: [row]
           });
         }, 1000);
@@ -180,50 +185,52 @@ client.on("interactionCreate", async (interaction) => {
         bucuRoom.time = 45;
         bucuRoom.channel = interaction.channel;
 
-        const row = new ActionRowBuilder().addComponents(
-          ...BUCU_LIST.map(c =>
-            new ButtonBuilder()
-              .setCustomId(`bucu_${c}`)
-              .setLabel(`${BUCU[c]} ${c.toUpperCase()}`)
-              .setStyle(ButtonStyle.Primary)
-          )
+        const row1 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("bucu_nai").setLabel("🦌 NAI").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("bucu_bau").setLabel("🍐 BẦU").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("bucu_ga").setLabel("🐓 GÀ").setStyle(ButtonStyle.Primary)
+        );
+
+        const row2 = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId("bucu_ca").setLabel("🐟 CÁ").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("bucu_cua").setLabel("🦀 CUA").setStyle(ButtonStyle.Primary),
+          new ButtonBuilder().setCustomId("bucu_tom").setLabel("🦐 TÔM").setStyle(ButtonStyle.Primary)
         );
 
         bucuRoom.message = await interaction.editReply({
           content: `🎰 **BẦU CUA**\n🎲 ??? ??? ???\n⏳ **45s**`,
-          components: [row]
+          components: [row1, row2]
         });
 
         const timer = setInterval(async () => {
           bucuRoom.time--;
-
           if (bucuRoom.time === 0) {
             bucuRoom.open = false;
-
-            const disabledRow1 = new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setCustomId("bucu_nai").setLabel("🦌 NAI").setStyle(ButtonStyle.Primary).setDisabled(true),
-  new ButtonBuilder().setCustomId("bucu_bau").setLabel("🍐 BẦU").setStyle(ButtonStyle.Primary).setDisabled(true),
-  new ButtonBuilder().setCustomId("bucu_ga").setLabel("🐓 GÀ").setStyle(ButtonStyle.Primary).setDisabled(true)
-);
-
-const disabledRow2 = new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setCustomId("bucu_ca").setLabel("🐟 CÁ").setStyle(ButtonStyle.Primary).setDisabled(true),
-  new ButtonBuilder().setCustomId("bucu_cua").setLabel("🦀 CUA").setStyle(ButtonStyle.Primary).setDisabled(true),
-  new ButtonBuilder().setCustomId("bucu_tom").setLabel("🦐 TÔM").setStyle(ButtonStyle.Primary).setDisabled(true)
-);
-
-await bucuRoom.message.edit({
-  content: `🎰 **BẦU CUA**\n🎲 ĐANG LẮC...\n⛔ HẾT THỜI GIAN`,
-  components: [disabledRow1, disabledRow2]
-});
-
             clearInterval(timer);
+
+            const d1 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId("bucu_nai").setLabel("🦌 NAI").setStyle(ButtonStyle.Primary).setDisabled(true),
+              new ButtonBuilder().setCustomId("bucu_bau").setLabel("🍐 BẦU").setStyle(ButtonStyle.Primary).setDisabled(true),
+              new ButtonBuilder().setCustomId("bucu_ga").setLabel("🐓 GÀ").setStyle(ButtonStyle.Primary).setDisabled(true)
+            );
+
+            const d2 = new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId("bucu_ca").setLabel("🐟 CÁ").setStyle(ButtonStyle.Primary).setDisabled(true),
+              new ButtonBuilder().setCustomId("bucu_cua").setLabel("🦀 CUA").setStyle(ButtonStyle.Primary).setDisabled(true),
+              new ButtonBuilder().setCustomId("bucu_tom").setLabel("🦐 TÔM").setStyle(ButtonStyle.Primary).setDisabled(true)
+            );
+
+            await bucuRoom.message.edit({
+              content: `🎰 **BẦU CUA**\n🎲 ĐANG LẮC...\n⛔ HẾT GIỜ`,
+              components: [d1, d2]
+            });
+
             return rollBucu();
           }
 
           bucuRoom.message.edit({
             content: `🎰 **BẦU CUA**\n🎲 ??? ??? ???\n⏳ **${bucuRoom.time}s**`,
-            components: [row]
+            components: [row1, row2]
           });
         }, 1000);
       }
@@ -231,21 +238,15 @@ await bucuRoom.message.edit({
 
     /* ===== BUTTON ===== */
     if (interaction.isButton()) {
-      if (
-        (interaction.customId === "tai" || interaction.customId === "xiu") &&
-        !room.open
-      )
-        return interaction.reply({ content: "⛔ Đã hết thời gian cược", ephemeral: true });
+      if ((interaction.customId === "tai" || interaction.customId === "xiu") && !taiXiuRoom.open)
+        return interaction.reply({ content: "⛔ Hết thời gian cược", ephemeral: true });
 
-      if (
-        interaction.customId.startsWith("bucu_") &&
-        !bucuRoom.open
-      )
-        return interaction.reply({ content: "⛔ Đã hết thời gian cược", ephemeral: true });
+      if (interaction.customId.startsWith("bucu_") && !bucuRoom.open)
+        return interaction.reply({ content: "⛔ Hết thời gian cược", ephemeral: true });
 
       const modal = new ModalBuilder()
         .setCustomId(`bet_${interaction.customId}`)
-        .setTitle("Nhập số coin cược")
+        .setTitle("Nhập coin cược")
         .addComponents(
           new ActionRowBuilder().addComponents(
             new TextInputBuilder()
@@ -263,26 +264,24 @@ await bucuRoom.message.edit({
     if (interaction.isModalSubmit()) {
       const amount = parseInt(interaction.fields.getTextInputValue("amount"));
       const user = getUser(interaction.user.id);
-      const id = interaction.customId;
 
       if (isNaN(amount) || amount <= 0)
         return interaction.reply({ content: "❌ Coin không hợp lệ", ephemeral: true });
-
       if (user.coin < amount)
         return interaction.reply({ content: "❌ Không đủ coin", ephemeral: true });
 
       user.coin -= amount;
 
-      if (id === "bet_tai" || id === "bet_xiu") {
-        room.bets[interaction.user.id] = {
-          choice: id.split("_")[1],
+      if (interaction.customId === "bet_tai" || interaction.customId === "bet_xiu") {
+        taiXiuRoom.bets[interaction.user.id] = {
+          choice: interaction.customId.split("_")[1],
           amount
         };
       }
 
-      if (id.startsWith("bet_bucu_")) {
+      if (interaction.customId.startsWith("bet_bucu_")) {
         bucuRoom.bets[interaction.user.id] = {
-          choice: id.split("_")[2],
+          choice: interaction.customId.split("_")[2],
           amount
         };
       }
@@ -290,14 +289,17 @@ await bucuRoom.message.edit({
       save();
       return interaction.reply({ content: "✅ Đã đặt cược", ephemeral: true });
     }
-
   } catch (e) {
     console.error(e);
   }
 });
 
-/* ================= ROLL TAI XIU ================= */
-async function rollDice() {
+/* ================= ROLL ================= */
+function rand() {
+  return Math.floor(Math.random() * 6) + 1;
+}
+
+async function rollTaiXiu() {
   const d1 = rand(), d2 = rand(), d3 = rand();
   const total = d1 + d2 + d3;
   const isTai = total >= 11;
@@ -307,12 +309,10 @@ async function rollDice() {
     `${diceEmoji(d1)} ${diceEmoji(d2)} ${diceEmoji(d3)} = **${total}**\n` +
     `👉 **${isTai ? "TÀI" : "XỈU"}**\n\n`;
 
-  for (const uid in room.bets) {
-    const bet = room.bets[uid];
+  for (const uid in taiXiuRoom.bets) {
+    const bet = taiXiuRoom.bets[uid];
     const user = getUser(uid);
-    const win = (bet.choice === "tai" && isTai) || (bet.choice === "xiu" && !isTai);
-
-    if (win) {
+    if ((bet.choice === "tai" && isTai) || (bet.choice === "xiu" && !isTai)) {
       user.coin += bet.amount * 2;
       text += `🎉 <@${uid}> thắng +${bet.amount}\n`;
     } else {
@@ -321,10 +321,9 @@ async function rollDice() {
   }
 
   save();
-  await room.channel.send(text);
+  await taiXiuRoom.channel.send(text);
 }
 
-/* ================= ROLL BUCU ================= */
 async function rollBucu() {
   const result = [
     BUCU_LIST[rand() - 1],
@@ -352,10 +351,6 @@ async function rollBucu() {
 
   save();
   await bucuRoom.channel.send(text);
-}
-
-function rand() {
-  return Math.floor(Math.random() * 6) + 1;
 }
 
 /* ================= LOGIN ================= */
